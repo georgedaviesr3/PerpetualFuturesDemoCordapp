@@ -33,6 +33,10 @@ class PerpFuturesContract : Contract {
                 //Perp contract specific constraints
                 "Initial price must be greater than 0" using (output.initialAssetPrice > 0)
                 "Position size must be greater than 0" using (output.positionSize > 0)
+                "Collateral must be positive" using (output.collateralPosted > 0)
+                //get leverage
+                val leverage = (output.positionSize * output.initialAssetPrice) / output.collateralPosted
+                "Cannot use leverage greater than 5x" using (leverage < 5)
                 //Something here about asset ticker maybe use an enumerated type for asset ticker to force this
             }
 

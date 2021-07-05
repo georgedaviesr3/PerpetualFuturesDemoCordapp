@@ -14,6 +14,7 @@ import net.corda.core.identity.Party
  * @param currentAssetPrice the current price of the asset
  * @param initialAssetPrice the value of the asset price at the point of the contract agreement
  * @param positionSize the number of assets the contract the taker wants to buy
+ * @param collateralPosted amount of collateral taker has posted - can be used to derive leverage
  * @param taker the party buying the contract
  * @param exchange the party issuing the contract
  */
@@ -23,6 +24,7 @@ data class PerpFuturesState(
     val currentAssetPrice: Double,
     val initialAssetPrice: Double,
     val positionSize: Double,
+    val collateralPosted: Double,
     val taker: Party,
     val exchange: Party,
     //val linearId: UniqueIdentifier = UniqueIdentifier(),
