@@ -5,59 +5,41 @@ import co.paralleluniverse.fibers.Suspendable
 import com.template.contracts.PerpFuturesContract
 import com.template.states.PerpFuturesState
 import net.corda.core.contracts.Command
-import net.corda.core.contracts.UniqueIdentifier
 import net.corda.core.contracts.requireThat
 import net.corda.core.flows.*
 import net.corda.core.identity.Party
-import net.corda.core.node.services.Vault
-import net.corda.core.node.services.vault.QueryCriteria
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
 import net.corda.core.flows.FinalityFlow
 import net.corda.core.flows.CollectSignaturesFlow
 import net.corda.core.flows.FlowSession
-import net.corda.core.node.services.queryBy
+
 
 object PartialClosePositionFlow {
     @InitiatingFlow
     @StartableByRPC
     class Initiator(
-        private val perpFuturesID: UniqueIdentifier,
-        private val exchange: Party,
-        private val positionSize: Double,
         private val assetTicker: String,
-        private val amountToClose: Double
-        //private val stateReference
+        private val amountToClose: Double,
+        private val exchange: Party
     ) : FlowLogic<SignedTransaction>() {
 
-        /**Extra vals*/
-        private val initialAssetPrice = 40000.0
-        private val taker = ourIdentity
-        private val currentAssetPrice = 42000.0 // ORACLE HERE
-
-        /**
-         * The progress tracker checkpoints each stage of the flow and outputs the specified messages when each
-         * checkpoint is reached in the code. See the 'progressTracker.currentStep' expressions within the call() function.
-         */
         companion object {
             object GETTING_STATE : ProgressTracker.Step("Getting Perp Futures State.")
             object GENERATING_TRANSACTION : ProgressTracker.Step("Generating transaction to consume contract.")
             object VERIFYING_TRANSACTION : ProgressTracker.Step("Verifying contract constraints.")
-
-            //ORACLE HERE??
             object SIGNING_TRANSACTION : ProgressTracker.Step("Signing transaction with our private key.")
             object GATHERING_SIGS : ProgressTracker.Step("Gathering the counterparty's signature.") {
                 override fun childProgressTracker() = CollectSignaturesFlow.tracker()
             }
-
-            //or maybe oracle here
             object FINALISING_TRANSACTION :
                 ProgressTracker.Step("Obtaining notary signature and recording transaction.") {
                 override fun childProgressTracker() = FinalityFlow.tracker()
             }
 
             fun tracker() = ProgressTracker(
+                GETTING_STATE,
                 GENERATING_TRANSACTION,
                 VERIFYING_TRANSACTION,
                 SIGNING_TRANSACTION,
@@ -65,84 +47,66 @@ object PartialClosePositionFlow {
                 FINALISING_TRANSACTION
             )
         }
-
-        override val progressTracker = ProgressTracker() // not sure what this does
+        override val progressTracker = ProgressTracker()
 
         /**Initiating flow logic*/
         @Suspendable
         override fun call(): SignedTransaction {
-            // Step 1. Get a reference to the notary service on our network and our key pair.
             val notary = serviceHub.networkMapCache.notaryIdentities[0]
 
-
-            // Get futures state
+            // Get current Futures State with vals for this asset ticker and taker(ourIdentity)
             progressTracker.currentStep = GETTING_STATE
-            val queryCriteria = QueryCriteria.LinearStateQueryCriteria(
-                null, listOf(perpFuturesID),
-                Vault.StateStatus.UNCONSUMED, null
-            )
+            val perpFuturesStateRefToEnd = getPerpFuturesStateByIDAndTicker(serviceHub,ourIdentity, assetTicker)
+            val inputState = perpFuturesStateRefToEnd.state.data
+            val positionSize = inputState.positionSize - amountToClose
 
-            val perpFuturesStateRefToEnd = serviceHub.vaultService.queryBy<PerpFuturesState>(queryCriteria)
-                .states.singleOrNull() ?: throw FlowException("Perp Future with id $perpFuturesID not found.")
+            // Get oracle price here
+            // Determine tokens to send each way
 
-            // Step 2. Compose the futures contract state.
+            // Compose the futures contract state.
             progressTracker.currentStep = GENERATING_TRANSACTION
-            val command = Command(PerpFuturesContract.Commands.Close(), listOf(taker.owningKey, exchange.owningKey))
-            val newPositionSize = positionSize - amountToClose
-            val output =
-                PerpFuturesState(assetTicker, currentAssetPrice, initialAssetPrice, newPositionSize, taker, exchange)
+            val command = Command(PerpFuturesContract.Commands.Close(), listOf(ourIdentity.owningKey, exchange.owningKey))
+            val output = PerpFuturesState(assetTicker, inputState.initialAssetPrice, positionSize, inputState.collateralPosted, ourIdentity, exchange)
+
             // Step 3. Create a new TransactionBuilder object.
             val builder = TransactionBuilder(notary)
                 .addCommand(command)
                 .addInputState(perpFuturesStateRefToEnd)
                 .addOutputState(output)
 
-            // Step 4. Verify and sign it with our KeyPair.
+            // Verify and sign it with our KeyPair.
             progressTracker.currentStep = VERIFYING_TRANSACTION
             builder.verify(serviceHub)
-
-            //Step 5. Sign transaction
             progressTracker.currentStep = SIGNING_TRANSACTION
             val ptx = serviceHub.signInitialTransaction(builder)
 
-            // Step 6. Collect the other party's signature using the SignTransactionFlow.
-            //         will only ever be one counterparty
+            // Collect the other party's signature using the SignTransactionFlow.
+            // will only ever be one counterparty
             progressTracker.currentStep = GATHERING_SIGS
             val exchangePartySession = initiateFlow(exchange)
-            val fullySignedTx =
-                subFlow(CollectSignaturesFlow(ptx, setOf(exchangePartySession), GATHERING_SIGS.childProgressTracker()))
+            val fullySignedTx = subFlow(CollectSignaturesFlow(ptx, setOf(exchangePartySession), GATHERING_SIGS.childProgressTracker()))
 
 
-            // Step 7. Assuming no exceptions, we can now finalise the transaction
+            // Finalise the transaction
             progressTracker.currentStep = FINALISING_TRANSACTION
-            return subFlow(
-                FinalityFlow(
-                    fullySignedTx,
-                    setOf(exchangePartySession),
-                    FINALISING_TRANSACTION.childProgressTracker()
-                )
-            )
+            return subFlow(FinalityFlow(fullySignedTx, setOf(exchangePartySession), FINALISING_TRANSACTION.childProgressTracker()))
         }
     }
 
-    /** Exchange response logic */
-    @InitiatedBy(Initiator::class)
+    /** Exchange Response Logic */
+    @InitiatedBy(CreatePositionFlow.Initiator::class)
     class Acceptor(val exchangePartySession: FlowSession) : FlowLogic<SignedTransaction>() {
-        //Initiated flow now signs tx
+
         @Suspendable
         override fun call(): SignedTransaction {
             val signTransactionFlow = object : SignTransactionFlow(exchangePartySession) {
                 override fun checkTransaction(stx: SignedTransaction) = requireThat {
-                    //Addition checks
-                    "Must be no output state" using (stx.tx.outputs.isEmpty())
-                    //CHECK THAT INPUT STATE = PREV OUTPUT STATE
-                    //val queryCriteria = QueryCriteria.LinearStateQueryCriteria(null,listOf(perpFuturesID),
-                    //  Vault.StateStatus.UNCONSUMED, null)
+                    // Verify tx meets exchange constraints
 
-                    //val perpFuturesStateRefToEnd = serviceHub.vaultService.queryBy<PerpFuturesState>(queryCriteria)
-                    //.states.singleOrNull()?:throw FlowException("Game State with id $perpFuturesID not found.")
                 }
             }
+
+            //Sign and return tx
             val txId = subFlow(signTransactionFlow).id
             return subFlow(ReceiveFinalityFlow(exchangePartySession, expectedTxId = txId))
         }
