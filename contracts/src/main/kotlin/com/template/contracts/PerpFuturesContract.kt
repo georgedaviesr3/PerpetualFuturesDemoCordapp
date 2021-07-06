@@ -30,7 +30,7 @@ class PerpFuturesContract : Contract {
                 "All participants must sign" using (command.signers.containsAll(output.participants.map {it.owningKey}))
                 "The output must be of type PerpFuturesState" using (output is PerpFuturesState)
 
-                //Perp contract specific constraints
+                //Perp contract specific constraints.
                 "Initial price must be greater than 0" using (output.initialAssetPrice > 0)
                 "Position size must be greater than 0" using (output.positionSize > 0)
                 "Collateral must be positive" using (output.collateralPosted > 0)
@@ -68,7 +68,7 @@ class PerpFuturesContract : Contract {
 
     // Used to indicate the transaction's intent.
     interface Commands : CommandData {
-        class Create : Commands
+        class Create(val ticker: String, val price: Double) : Commands
         class Close : Commands
         class PartialClose: Commands
     }
