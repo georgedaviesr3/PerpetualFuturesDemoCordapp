@@ -1,11 +1,15 @@
 package com.template.states
 
 import com.template.contracts.PerpFuturesContract
+import com.template.schema.PerpFuturesSchemaV1
 import net.corda.core.contracts.BelongsToContract
 import net.corda.core.contracts.ContractState
 import net.corda.core.contracts.UniqueIdentifier
 import net.corda.core.identity.AbstractParty
 import net.corda.core.identity.Party
+import net.corda.core.schemas.MappedSchema
+import net.corda.core.schemas.PersistentState
+import net.corda.core.schemas.QueryableState
 
 /**
  * The state object recording a perpetual futures agreement between two parties.
@@ -27,6 +31,21 @@ data class PerpFuturesState(
     val collateralPosted: Double,
     val taker: Party,
     val exchange: Party,
-    //val linearId: UniqueIdentifier = UniqueIdentifier(),
+
     override val participants: List<AbstractParty> = listOf(taker,exchange)
-) : ContractState
+) : QueryableState{
+    override fun generateMappedObject(schema: MappedSchema): PersistentState {
+        return when(schema){
+            is PerpFuturesSchemaV1 -> PerpFuturesSchemaV1.PerpSchema(
+                    assetTicker = this.assetTicker,
+                    taker = this.taker
+                    )
+            else -> throw IllegalStateException("Unrecognised schema ${schema.name} passed.")
+        }
+    }
+
+    override fun supportedSchemas(): Iterable<MappedSchema> {
+        return listOf(PerpFuturesSchemaV1)
+    }
+
+}
