@@ -3,6 +3,7 @@ package com.template.flows
 import co.paralleluniverse.fibers.Suspendable
 import com.template.contracts.PerpFuturesContract
 import com.template.states.PerpFuturesState
+import net.corda.core.contracts.Command
 import net.corda.core.contracts.requireThat
 import net.corda.core.flows.*
 import net.corda.core.identity.Party
@@ -12,6 +13,7 @@ import net.corda.core.utilities.ProgressTracker
 import net.corda.core.flows.FinalityFlow
 import net.corda.core.flows.CollectSignaturesFlow
 import net.corda.core.identity.CordaX500Name
+import java.util.function.Predicate
 
 
 object CreatePositionFlow {
@@ -62,7 +64,7 @@ object CreatePositionFlow {
                 ?: throw IllegalArgumentException("Requested oracle: $oracleName not found on network")
 
             //Query the oracle
-            val requestedPrice = 500.0//subFlow(QueryPrice(oracle, assetTicker))
+            val requestedPrice = subFlow(QueryPriceOracleFlow(oracle, assetTicker))
 
             // Compose the futures contract state and new transaction builder object
             progressTracker.currentStep = GENERATING_TRANSACTION
@@ -79,16 +81,23 @@ object CreatePositionFlow {
             progressTracker.currentStep = SIGNING_TRANSACTION
             val ptx = serviceHub.signInitialTransaction(builder)
 
+            //Get oracle to sign
+            val ftx = ptx.buildFilteredTransaction(Predicate{
+                when (it){
+                    is Command<*> -> oracle.owningKey in it.signers && it.value is PerpFuturesContract.Commands.Create
+                    else -> false
+                }
+
+            })
+            val oracleSig = subFlow(SignPriceOracleFlow(oracle, ftx)) // can use build filtered tx to hide data
+            val usAndOracleSigned = ptx.withAdditionalSignature(oracleSig)
+
             // Collect the other party's signature using the SignTransactionFlow.
             // will only ever be one counterparty (exchange)
             progressTracker.currentStep = GATHERING_SIGS
             val exchangePartySession = initiateFlow(exchange)
-            val partSignedTx =
-                subFlow(CollectSignaturesFlow(ptx, setOf(exchangePartySession), GATHERING_SIGS.childProgressTracker()))
-
-            //Get oracle to sign
-            val oracleSig = subFlow(SignPrice(oracle, partSignedTx)) // can use build filtered tx to hide data
-            val fullySignedTx = partSignedTx.withAdditionalSignature(oracleSig)
+            val fullySignedTx =
+                subFlow(CollectSignaturesFlow(usAndOracleSigned, setOf(exchangePartySession), GATHERING_SIGS.childProgressTracker()))
 
 
             // Finalise the tx
