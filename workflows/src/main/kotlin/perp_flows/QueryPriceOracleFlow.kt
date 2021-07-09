@@ -1,4 +1,4 @@
-package com.template.flows
+package perp_flows
 
 import co.paralleluniverse.fibers.Suspendable
 import com.template.states.PerpFuturesState

@@ -29,7 +29,6 @@ data class PerpFuturesState(
     val collateralPosted: Double,
     val taker: Party,
     val exchange: Party,
-
     override val participants: List<AbstractParty> = listOf(taker,exchange)
 ) : QueryableState{
     override fun generateMappedObject(schema: MappedSchema): PersistentState {

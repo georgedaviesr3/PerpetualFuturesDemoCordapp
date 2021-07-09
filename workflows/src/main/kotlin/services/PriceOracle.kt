@@ -17,7 +17,7 @@ class MaxSizeHashMap<K, V>(private val maxSize: Int = 1024) : LinkedHashMap<K, V
 
 
 @CordaService
-class PriceOracle(val services: ServiceHub) : SingletonSerializeAsToken(){
+class PriceOracle(private val services: ServiceHub) : SingletonSerializeAsToken(){
     private val cache = MaxSizeHashMap<String, Double>()
     private val myKey = services.myInfo.legalIdentities.first().owningKey
 

@@ -1,4 +1,4 @@
-package com.template.flows
+package perp_flows
 
 import co.paralleluniverse.fibers.Suspendable
 import com.template.contracts.PerpFuturesContract
@@ -56,9 +56,6 @@ object CreatePositionFlow {
 
             // Get current price through oracle
             progressTracker.currentStep = GETTING_ORACLE_PRICE
-            val currentAssetPrice = 40000.0 // will equal oracle value here
-
-            //Get oracle node
             val oracleName = CordaX500Name("Price Oracle", "London", "UK")
             val oracle = serviceHub.networkMapCache.getNodeByLegalName(oracleName)?.legalIdentities?.first()
                 ?: throw IllegalArgumentException("Requested oracle: $oracleName not found on network")
@@ -97,12 +94,16 @@ object CreatePositionFlow {
             progressTracker.currentStep = GATHERING_SIGS
             val exchangePartySession = initiateFlow(exchange)
             val fullySignedTx =
-                subFlow(CollectSignaturesFlow(usAndOracleSigned, setOf(exchangePartySession), GATHERING_SIGS.childProgressTracker()))
+                subFlow(CollectSignaturesFlow(usAndOracleSigned, setOf(exchangePartySession),
+                    GATHERING_SIGS.childProgressTracker()
+                ))
 
 
             // Finalise the tx
             progressTracker.currentStep = FINALISING_TRANSACTION
-            return subFlow(FinalityFlow(fullySignedTx, setOf(exchangePartySession), FINALISING_TRANSACTION.childProgressTracker()))
+            return subFlow(FinalityFlow(fullySignedTx, setOf(exchangePartySession),
+                FINALISING_TRANSACTION.childProgressTracker()
+            ))
         }
     }
 
