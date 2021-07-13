@@ -15,7 +15,6 @@ import net.corda.core.flows.CollectSignaturesFlow
 import net.corda.core.identity.CordaX500Name
 import java.util.function.Predicate
 
-
 object CreatePositionFlow {
     @InitiatingFlow
     @StartableByRPC
@@ -23,7 +22,8 @@ object CreatePositionFlow {
         private val assetTicker: String,
         private val collateralPosted: Double,
         private val positionSize: Double,
-        private val exchange: Party //Is the exchange ever going to change?
+        private val exchange: Party,
+        private val oracle: Party // just passed here for testing -> in prod the oracle node would be found in the network map
     ) : FlowLogic<SignedTransaction>() {
 
         companion object {
@@ -48,28 +48,27 @@ object CreatePositionFlow {
                 FINALISING_TRANSACTION
             )
         }
-        override val progressTracker = ProgressTracker()
+        override val progressTracker = tracker()
 
+        /**Trader open position logic */
         @Suspendable
         override fun call(): SignedTransaction {
             val notary = serviceHub.networkMapCache.notaryIdentities[0]
 
-            // Get current price through oracle
-            progressTracker.currentStep = GETTING_ORACLE_PRICE
-            val oracleName = CordaX500Name("Price Oracle", "London", "UK")
-            val oracle = serviceHub.networkMapCache.getNodeByLegalName(oracleName)?.legalIdentities?.first()
-                ?: throw IllegalArgumentException("Requested oracle: $oracleName not found on network")
+           //Oracle is passed as a param for testing
+           /* val oracleName = CordaX500Name("Price Oracle", "London", "GB")
+           val oracle = serviceHub.networkMapCache.getNodeByLegalName(oracleName)?.legalIdentities?.first()
+                ?: throw IllegalArgumentException("Requested oracle: $oracleName not found on network")*/
 
-            //Query the oracle
+            // Get current price from oracle
+            progressTracker.currentStep = GETTING_ORACLE_PRICE
             val requestedPrice = subFlow(QueryPriceOracleFlow(oracle, assetTicker))
 
             // Compose the futures contract state and new transaction builder object
             progressTracker.currentStep = GENERATING_TRANSACTION
             val output = PerpFuturesState(assetTicker, requestedPrice, positionSize, collateralPosted, ourIdentity, exchange)
-
-            //3 req signers - me, exchange, oracle
             val builder = TransactionBuilder(notary)
-                .addCommand(PerpFuturesContract.Commands.Create(assetTicker,requestedPrice), listOf(ourIdentity.owningKey, exchange.owningKey, oracle.owningKey))
+                .addCommand(PerpFuturesContract.Commands.Create(assetTicker,requestedPrice), listOf(ourIdentity.owningKey, exchange.owningKey))
                 .addOutputState(output)
 
             // Verify and sign it with our KeyPair.
@@ -78,7 +77,7 @@ object CreatePositionFlow {
             progressTracker.currentStep = SIGNING_TRANSACTION
             val ptx = serviceHub.signInitialTransaction(builder)
 
-            //Get oracle to sign
+            //Generate filtered tx
             val ftx = ptx.buildFilteredTransaction(Predicate{
                 when (it){
                     is Command<*> -> oracle.owningKey in it.signers && it.value is PerpFuturesContract.Commands.Create
@@ -86,18 +85,17 @@ object CreatePositionFlow {
                 }
 
             })
+            //Get oracle to sign
             val oracleSig = subFlow(SignPriceOracleFlow(oracle, ftx)) // can use build filtered tx to hide data
             val usAndOracleSigned = ptx.withAdditionalSignature(oracleSig)
 
-            // Collect the other party's signature using the SignTransactionFlow.
-            // will only ever be one counterparty (exchange)
+            // Collect the exchanges signature
             progressTracker.currentStep = GATHERING_SIGS
             val exchangePartySession = initiateFlow(exchange)
             val fullySignedTx =
                 subFlow(CollectSignaturesFlow(usAndOracleSigned, setOf(exchangePartySession),
                     GATHERING_SIGS.childProgressTracker()
                 ))
-
 
             // Finalise the tx
             progressTracker.currentStep = FINALISING_TRANSACTION
@@ -108,7 +106,7 @@ object CreatePositionFlow {
     }
 
     /** Exchange Response Logic */
-    @InitiatedBy(Initiator::class)
+    @InitiatedBy(CreatePositionFlow.Initiator::class)
     class Acceptor(val exchangePartySession: FlowSession) : FlowLogic<SignedTransaction>() {
 
         @Suspendable

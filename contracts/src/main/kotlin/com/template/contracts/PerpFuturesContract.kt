@@ -27,7 +27,7 @@ class PerpFuturesContract : Contract {
                 "No inputs should be consumed when issuing." using (tx.inputs.isEmpty())
                 "Only one output state should be created." using (tx.outputs.size == 1)
                 "Contract issuer must not also be contract taker" using (output.exchange != output.taker)
-                "All participants must sign" using (command.signers.containsAll(output.participants.map {it.owningKey}))
+               // "All participants must sign" using (command.signers.containsAll(output.participants.map {it.owningKey}))
                 "The output must be of type PerpFuturesState" using (output is PerpFuturesState)
 
                 //Perp contract specific constraints.
@@ -45,7 +45,8 @@ class PerpFuturesContract : Contract {
                 "There should be one input state." using (tx.inputs.size == 1)
                 "There should be no output state." using (tx.outputs.isEmpty())
                 "The input must be of type PerpFuturesState" using (input is PerpFuturesState)
-                //"Position size must be 0" using (input.positionSize.isEmpty()) <- Syntax for 0 needed
+                "Position size must be 0" using (input.positionSize <= 0)
+                "Position size must be 0" using (input.positionSize >= 0)
                 "All participants must sign" using (command.signers.containsAll(input.participants.map {it.owningKey}))
             }
 
