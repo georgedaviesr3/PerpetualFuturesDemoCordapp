@@ -39,7 +39,6 @@ class PriceOracle(private val services: ServiceHub) : SingletonSerializeAsToken(
     fun sign(ftx: FilteredTransaction): TransactionSignature {
         ftx.verify() //check merkle tree is valid
 
-
         /**
          * Does command contain the correct price?
          * Is the oracle listed as a signer?
@@ -47,6 +46,14 @@ class PriceOracle(private val services: ServiceHub) : SingletonSerializeAsToken(
         fun correctPriceAndIAmSigner(elem: Any) = when{
             elem is Command<*> && elem.value is PerpFuturesContract.Commands.Create ->{
                 val commandData = elem.value as PerpFuturesContract.Commands.Create
+                myKey in elem.signers && query(commandData.ticker) == commandData.price
+            }
+            elem is Command<*> && elem.value is PerpFuturesContract.Commands.Close ->{
+                val commandData = elem.value as PerpFuturesContract.Commands.Close
+                myKey in elem.signers && query(commandData.ticker) == commandData.price
+            }
+            elem is Command<*> && elem.value is PerpFuturesContract.Commands.PartialClose ->{
+                val commandData = elem.value as PerpFuturesContract.Commands.PartialClose
                 myKey in elem.signers && query(commandData.ticker) == commandData.price
             }
             else -> false

@@ -45,8 +45,6 @@ class PerpFuturesContract : Contract {
                 "There should be one input state." using (tx.inputs.size == 1)
                 "There should be no output state." using (tx.outputs.isEmpty())
                 "The input must be of type PerpFuturesState" using (input is PerpFuturesState)
-                "Position size must be 0" using (input.positionSize <= 0)
-                "Position size must be 0" using (input.positionSize >= 0)
                 "All participants must sign" using (command.signers.containsAll(input.participants.map {it.owningKey}))
             }
 
