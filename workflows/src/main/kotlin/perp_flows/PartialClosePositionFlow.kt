@@ -24,7 +24,8 @@ object PartialClosePositionFlow {
     class Initiator(
         private val assetTicker: String,
         private val amountToClose: Double,
-        private val exchange: Party
+        private val exchange: Party,
+        private val oracle: Party
     ) : FlowLogic<SignedTransaction>() {
 
         companion object {
@@ -51,7 +52,7 @@ object PartialClosePositionFlow {
                 FINALISING_TRANSACTION
             )
         }
-        override val progressTracker = ProgressTracker()
+        override val progressTracker = tracker()
 
         /**Initiating flow logic*/
         @Suspendable
@@ -64,19 +65,18 @@ object PartialClosePositionFlow {
             val inputState = perpFuturesStateRefToEnd.state.data
             val positionSize = inputState.positionSize - amountToClose
 
-            // Get oracle price here
-            progressTracker.currentStep = GETTING_ORACLE_PRICE
-            val oracleName = CordaX500Name("Price Oracle", "London", "UK")
+            //Oracle is passed as a param for testing
+            /* val oracleName = CordaX500Name("Price Oracle", "London", "GB")
             val oracle = serviceHub.networkMapCache.getNodeByLegalName(oracleName)?.legalIdentities?.first()
-                ?: throw IllegalArgumentException("Requested oracle: $oracleName not found on network")
+                 ?: throw IllegalArgumentException("Requested oracle: $oracleName not found on network")*/
 
-            //Query the oracle
+            // Get current price from oracle
+            progressTracker.currentStep = GETTING_ORACLE_PRICE
             val requestedPrice = subFlow(QueryPriceOracleFlow(oracle, assetTicker))
 
             // Compose the futures contract state.
             progressTracker.currentStep = GENERATING_TRANSACTION
-            val command = Command(PerpFuturesContract.Commands.PartialClose(assetTicker, requestedPrice), listOf(ourIdentity.owningKey, exchange.owningKey
-            ,oracle.owningKey))
+            val command = Command(PerpFuturesContract.Commands.PartialClose(assetTicker, requestedPrice), listOf(ourIdentity.owningKey, exchange.owningKey))
             val output = PerpFuturesState(assetTicker, inputState.initialAssetPrice, positionSize, inputState.collateralPosted, ourIdentity, exchange)
 
             // Step 3. Create a new TransactionBuilder object.
@@ -91,7 +91,7 @@ object PartialClosePositionFlow {
             progressTracker.currentStep = SIGNING_TRANSACTION
             val ptx = serviceHub.signInitialTransaction(builder)
 
-//Get oracle to sign
+            //Generate filtered tx
             val ftx = ptx.buildFilteredTransaction(Predicate{
                 when (it){
                     is Command<*> -> oracle.owningKey in it.signers && it.value is PerpFuturesContract.Commands.PartialClose
@@ -99,29 +99,29 @@ object PartialClosePositionFlow {
                 }
 
             })
-            val oracleSig = subFlow(SignPriceOracleFlow(oracle, ftx)) // can use build filtered tx to hide data
+            //Get oracle to sign
+            val oracleSig = subFlow(SignPriceOracleFlow(oracle, ftx))
             val usAndOracleSigned = ptx.withAdditionalSignature(oracleSig)
 
-            // Collect the other party's signature using the SignTransactionFlow.
-            // will only ever be one counterparty (exchange)
-            progressTracker.currentStep = CreatePositionFlow.Initiator.Companion.GATHERING_SIGS
+            // Collect exchanges sig
+            progressTracker.currentStep = GATHERING_SIGS
             val exchangePartySession = initiateFlow(exchange)
             val fullySignedTx =
                 subFlow(CollectSignaturesFlow(usAndOracleSigned, setOf(exchangePartySession),
-                    CreatePositionFlow.Initiator.Companion.GATHERING_SIGS.childProgressTracker()
+                    GATHERING_SIGS.childProgressTracker()
                 ))
 
 
             // Finalise the tx
-            progressTracker.currentStep = CreatePositionFlow.Initiator.Companion.FINALISING_TRANSACTION
+            progressTracker.currentStep = FINALISING_TRANSACTION
             return subFlow(FinalityFlow(fullySignedTx, setOf(exchangePartySession),
-                CreatePositionFlow.Initiator.Companion.FINALISING_TRANSACTION.childProgressTracker()
+                FINALISING_TRANSACTION.childProgressTracker()
             ))
         }
     }
 
     /** Exchange Response Logic */
-    @InitiatedBy(CreatePositionFlow.Initiator::class)
+    @InitiatedBy(PartialClosePositionFlow.Initiator::class)
     class Acceptor(val exchangePartySession: FlowSession) : FlowLogic<SignedTransaction>() {
 
         @Suspendable
