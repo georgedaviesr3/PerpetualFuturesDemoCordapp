@@ -2,15 +2,12 @@ package com.template
 
 import com.template.schema.PerpFuturesSchemaV1
 import com.template.states.PerpFuturesState
-import groovy.util.GroovyTestCase.assertEquals
 import perp_flows.CreatePositionFlow
-import net.corda.core.identity.CordaX500Name
 import net.corda.core.node.services.queryBy
 import net.corda.core.node.services.vault.Builder.equal
 import net.corda.core.node.services.vault.QueryCriteria
 import net.corda.core.utilities.getOrThrow
 import net.corda.testing.common.internal.testNetworkParameters
-import net.corda.testing.core.TestIdentity
 import net.corda.testing.node.MockNetwork
 import net.corda.testing.node.MockNetworkParameters
 import net.corda.testing.node.StartedMockNode
@@ -18,7 +15,6 @@ import net.corda.testing.node.TestCordapp
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
-import perp_flows.BasicFlow
 import kotlin.test.assertEquals
 
 
@@ -57,6 +53,7 @@ class CreatePositionFlowTests {
         val createPositionFlow = CreatePositionFlow.Initiator("BTC", 1000.0, 0.01, exchange.info.legalIdentities[0], oracle.info.legalIdentities[0])
         val future1 = trader1.startFlow(createPositionFlow)
 
+        //Run network
         network.runNetwork()
         future1.getOrThrow()
 
@@ -67,14 +64,14 @@ class CreatePositionFlowTests {
         val queryCriteria = QueryCriteria.VaultCustomQueryCriteria(tickerQuery).and(QueryCriteria.VaultCustomQueryCriteria(takerQuery))
 
         val state = trader1.services.vaultService.queryBy<PerpFuturesState>(queryCriteria).states[0]
+        val stateData = state.state.data
 
-        assertEquals(50400.0,state.state.data.initialAssetPrice, "Wrong oracle price")
-       // val matchingStates = serviceHub.vaultService.queryBy<PerpFuturesState>(queryCriteria).states
-
-        //assertEquals(501.0, 501.0)
-
-        //network.runNetwork()
-        //future1.getOrThrow()
-
+        //Ensure values are stored in the correct variables and oracle price is correct
+        assertEquals(0.8, stateData.initialAssetPrice, "Wrong oracle price")
+        //assertEquals("BTC", stateData.assetTicker, "Wrong asset ticker")
+        assertEquals(0.01, stateData.positionSize, "Wrong position size")
+        assertEquals(1000.0,stateData.collateralPosted, "Wrong collateral")
+        assertEquals(trader1.info.legalIdentities[0],stateData.taker, "Wrong taker")
+        assertEquals(exchange.info.legalIdentities[0],stateData.exchange, "Wrong taker")
     }
 }

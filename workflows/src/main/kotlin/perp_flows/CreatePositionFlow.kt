@@ -64,11 +64,14 @@ object CreatePositionFlow {
             progressTracker.currentStep = GETTING_ORACLE_PRICE
             val requestedPrice = subFlow(QueryPriceOracleFlow(oracle, assetTicker))
 
+            //Get current funding rate from funding rate oracle
+            val requestedFundingRate = subFlow(QueryFundingRateOracleFlow(oracle, assetTicker))
+
             // Compose the futures contract state and new transaction builder object
             progressTracker.currentStep = GENERATING_TRANSACTION
-            val output = PerpFuturesState(assetTicker, requestedPrice, positionSize, collateralPosted, ourIdentity, exchange)
+            val output = PerpFuturesState(assetTicker, requestedFundingRate, positionSize, collateralPosted, ourIdentity, exchange)
             val builder = TransactionBuilder(notary)
-                .addCommand(PerpFuturesContract.Commands.Create(assetTicker,requestedPrice), listOf(ourIdentity.owningKey, exchange.owningKey))
+                .addCommand(PerpFuturesContract.Commands.Create(assetTicker,requestedPrice, requestedFundingRate), listOf(ourIdentity.owningKey, exchange.owningKey))
                 .addOutputState(output)
 
             // Verify and sign it with our KeyPair.
@@ -85,9 +88,12 @@ object CreatePositionFlow {
                 }
 
             })
-            //Get oracle to sign
-            val oracleSig = subFlow(SignPriceOracleFlow(oracle, ftx)) // can use build filtered tx to hide data
-            val usAndOracleSigned = ptx.withAdditionalSignature(oracleSig)
+
+            //Get price/ funding rate oracle to sign
+            //Add sigs to tx
+            val priceOracleSig = subFlow(SignPriceOracleFlow(oracle, ftx))
+            val fundingRateOracleSig = subFlow(SignFundingRateOracleFlow(oracle, ftx))
+            val usAndOracleSigned = ptx.withAdditionalSignature(priceOracleSig).withAdditionalSignature(fundingRateOracleSig)
 
             // Collect the exchanges signature
             progressTracker.currentStep = GATHERING_SIGS

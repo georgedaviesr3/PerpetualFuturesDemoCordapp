@@ -67,7 +67,7 @@ class PerpFuturesContract : Contract {
 
     // Used to indicate the transaction's intent.
     interface Commands : CommandData {
-        class Create(val ticker: String, val price: Double) : Commands
+        class Create(val ticker: String, val price: Double, val fundingRate: Double) : Commands
         class Close(val ticker: String, val price: Double ) : Commands
         class PartialClose(val ticker: String, val price: Double): Commands
     }

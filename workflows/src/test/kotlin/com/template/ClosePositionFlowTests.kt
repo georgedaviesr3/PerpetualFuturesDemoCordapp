@@ -4,13 +4,11 @@ import com.template.schema.PerpFuturesSchemaV1
 import com.template.states.PerpFuturesState
 import groovy.util.GroovyTestCase.assertEquals
 import perp_flows.CreatePositionFlow
-import net.corda.core.identity.CordaX500Name
 import net.corda.core.node.services.queryBy
 import net.corda.core.node.services.vault.Builder.equal
 import net.corda.core.node.services.vault.QueryCriteria
 import net.corda.core.utilities.getOrThrow
 import net.corda.testing.common.internal.testNetworkParameters
-import net.corda.testing.core.TestIdentity
 import net.corda.testing.node.MockNetwork
 import net.corda.testing.node.MockNetworkParameters
 import net.corda.testing.node.StartedMockNode
@@ -18,7 +16,6 @@ import net.corda.testing.node.TestCordapp
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
-import perp_flows.BasicFlow
 import perp_flows.ClosePositionFlow
 import kotlin.test.assertEquals
 
