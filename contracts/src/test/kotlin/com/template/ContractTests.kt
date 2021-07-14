@@ -23,34 +23,34 @@ class ContractTests {
             transaction {
                 input(PerpFuturesContract.ID, state)
                 output(PerpFuturesContract.ID, state)
-                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0))
+                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0, 0.08))
                 fails()
             }
             //should fail as has two outputs
             transaction {
                 output(PerpFuturesContract.ID, state)
                 output(PerpFuturesContract.ID, state)
-                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0))
+                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0, 0.08))
                 fails()
             }
             val failingState = PerpFuturesState("BTC", 45000.0, 0.01, 5000.0, exchange.party, exchange.party)
             //should fail as has taker and exchange are same person
             transaction {
                 output(PerpFuturesContract.ID, failingState)
-                command(exchange.publicKey,PerpFuturesContract.Commands.Create("BTC", 45000.0))
+                command(exchange.publicKey,PerpFuturesContract.Commands.Create("BTC", 45000.0, 0.08))
                 fails()
             }
             //should fail as only the exchange signs
             transaction {
                 output(PerpFuturesContract.ID, state)
-                command(exchange.publicKey,PerpFuturesContract.Commands.Create("BTC", 45000.0))
+                command(exchange.publicKey,PerpFuturesContract.Commands.Create("BTC", 45000.0, 0.08))
                 fails()
             }
 
             // Should pass as has only one output
             transaction {
                 output(PerpFuturesContract.ID, state)
-                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0))
+                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0, 0.08))
                 verifies()
             }
         }
@@ -64,7 +64,7 @@ class ContractTests {
             val lessThanZeroPriceState = PerpFuturesState("BTC", -45000.0, 0.01, 5000.0, trader1.party, exchange.party)
             transaction {
                 output(PerpFuturesContract.ID, lessThanZeroPriceState)
-                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0))
+                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0, 0.08))
                 fails()
             }
 
@@ -72,7 +72,7 @@ class ContractTests {
             val lessThanZeroPositionState = PerpFuturesState("BTC", 45000.0, -0.01, 5000.0, trader1.party, exchange.party)
             transaction {
                 output(PerpFuturesContract.ID, lessThanZeroPositionState)
-                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0))
+                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0, 0.08))
                 fails()
             }
 
@@ -80,21 +80,21 @@ class ContractTests {
             val lessThanZeroCollateralState = PerpFuturesState("BTC", 45000.0, 0.01, -5000.0, trader1.party, exchange.party)
             transaction {
                 output(PerpFuturesContract.ID, lessThanZeroCollateralState)
-                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0))
+                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0, 0.08))
                 fails()
             }
 
             val tooMuchLeverageState = PerpFuturesState("BTC", 45000.0, 1.0, 5000.0, trader1.party, exchange.party)
             transaction {
                 output(PerpFuturesContract.ID, tooMuchLeverageState)
-                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0))
+                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0, 0.08))
                 fails()
             }
 
             val validState = PerpFuturesState("BTC", 45000.0, 0.01, 5000.0, trader1.party, exchange.party)
             transaction {
                 output(PerpFuturesContract.ID, validState)
-                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0))
+                command(listOf(trader1.publicKey, exchange.publicKey),PerpFuturesContract.Commands.Create("BTC", 45000.0, 0.08))
                 verifies()
             }
         }

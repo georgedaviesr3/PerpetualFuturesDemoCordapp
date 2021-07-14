@@ -1,5 +1,9 @@
 package perp_flows
 
+import api.QueryFundingRateOracleFlow
+import api.QueryPriceOracleFlow
+import api.SignFundingRateOracleFlow
+import api.SignPriceOracleFlow
 import co.paralleluniverse.fibers.Suspendable
 import com.template.contracts.PerpFuturesContract
 import com.template.states.PerpFuturesState
@@ -12,7 +16,6 @@ import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
 import net.corda.core.flows.FinalityFlow
 import net.corda.core.flows.CollectSignaturesFlow
-import net.corda.core.identity.CordaX500Name
 import java.util.function.Predicate
 import java.time.Instant
 import java.time.Instant.now
