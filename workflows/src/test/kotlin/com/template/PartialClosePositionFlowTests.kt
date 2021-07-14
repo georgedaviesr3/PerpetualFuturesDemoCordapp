@@ -70,7 +70,7 @@ class PartialClosePositionFlowTests {
 
         assertEquals(0.5,0.5)
         //Ensure values are stored in the correct variables and oracle price is correct
-        assertEquals(50400.0, stateData.initialAssetPrice, "Wrong oracle price")
+        assertEquals(35000.0, stateData.initialAssetPrice, "Wrong oracle price")
         assertEquals(0.01, stateData.positionSize, "Wrong position size")
         assertEquals(1000.0,stateData.collateralPosted, "Wrong collateral")
         assertEquals(trader1.info.legalIdentities[0],stateData.taker, "Wrong taker")

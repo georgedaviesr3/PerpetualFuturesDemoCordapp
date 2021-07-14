@@ -1,36 +1,31 @@
-package perp_flows
+/*package perp_flows
 
 import co.paralleluniverse.fibers.Suspendable
-import com.template.contracts.PerpFuturesContract
-import com.template.states.PerpFuturesState
+import com.template.contracts.*
 import net.corda.core.contracts.Command
 import net.corda.core.contracts.requireThat
 import net.corda.core.flows.*
+import net.corda.core.identity.CordaX500Name
 import net.corda.core.identity.Party
 import net.corda.core.transactions.SignedTransaction
 import net.corda.core.transactions.TransactionBuilder
 import net.corda.core.utilities.ProgressTracker
-import net.corda.core.flows.FinalityFlow
-import net.corda.core.flows.CollectSignaturesFlow
-import net.corda.core.identity.CordaX500Name
-import java.util.function.Predicate
 import java.time.Instant
-import java.time.Instant.now
+import java.util.function.Predicate
 
-object CreatePositionFlow {
+object LiquidatePositionFlow {
     @InitiatingFlow
     @StartableByRPC
     class Initiator(
         private val assetTicker: String,
-        private val collateralPosted: Double,
-        private val positionSize: Double,
-        private val exchange: Party,
-        private val oracle: Party // just passed here for testing -> in prod the oracle node would be found in the network map
+        private val taker: Party,
+        private val oracle: Party
     ) : FlowLogic<SignedTransaction>() {
 
         companion object {
-            object GETTING_ORACLE_PRICE : ProgressTracker.Step("Getting current asset price from the oracle")
-            object GENERATING_TRANSACTION : ProgressTracker.Step("Generating transaction based on new PerpFuture Contract.")
+            object GETTING_STATE : ProgressTracker.Step("Getting Perp Futures State.")
+            object GETTING_ORACLE_PRICE : ProgressTracker.Step("Getting asset price from oracle.")
+            object GENERATING_TRANSACTION : ProgressTracker.Step("Generating transaction to consume contract.")
             object VERIFYING_TRANSACTION : ProgressTracker.Step("Verifying contract constraints.")
             object SIGNING_TRANSACTION : ProgressTracker.Step("Signing transaction with our private key.")
             object GATHERING_SIGS : ProgressTracker.Step("Gathering the counterparty's signature.") {
@@ -42,6 +37,7 @@ object CreatePositionFlow {
             }
 
             fun tracker() = ProgressTracker(
+                GETTING_STATE,
                 GETTING_ORACLE_PRICE,
                 GENERATING_TRANSACTION,
                 VERIFYING_TRANSACTION,
@@ -52,32 +48,31 @@ object CreatePositionFlow {
         }
         override val progressTracker = tracker()
 
-        /**Trader open position logic */
         @Suspendable
         override fun call(): SignedTransaction {
             val notary = serviceHub.networkMapCache.notaryIdentities[0]
 
             //Get current time for oracle queries
-            val instant: Instant = now()
+            val instant: Instant = Instant.now()
 
-           //Oracle is passed as a param for testing
-           /* val oracleName = CordaX500Name("Price Oracle", "London", "GB")
-           val oracle = serviceHub.networkMapCache.getNodeByLegalName(oracleName)?.legalIdentities?.first()
+            // Get current Futures State with vals for this asset ticker and taker
+            progressTracker.currentStep = GETTING_STATE
+            val perpFuturesStateRefToEnd = getPerpFuturesStateByIDAndTicker(serviceHub, taker, assetTicker)
+
+            /*val oracleName = CordaX500Name("Price Oracle", "London", "UK")
+            val oracle = serviceHub.networkMapCache.getNodeByLegalName(oracleName)?.legalIdentities?.first()
                 ?: throw IllegalArgumentException("Requested oracle: $oracleName not found on network")*/
 
             // Get current price from oracle
             progressTracker.currentStep = GETTING_ORACLE_PRICE
             val requestedPrice = subFlow(QueryPriceOracleFlow(oracle, assetTicker, instant))
 
-            //Get current funding rate from funding rate oracle
-            val requestedFundingRate = subFlow(QueryFundingRateOracleFlow(oracle, assetTicker, instant))
-
-            // Compose the futures contract state and new transaction builder object
+            // Build tx
             progressTracker.currentStep = GENERATING_TRANSACTION
-            val output = PerpFuturesState(assetTicker, requestedPrice, positionSize, collateralPosted, ourIdentity, exchange)
+            val command = Command(PerpFuturesContract.Commands.Close(assetTicker, requestedPrice), listOf(ourIdentity.owningKey))
             val builder = TransactionBuilder(notary)
-                .addCommand(PerpFuturesContract.Commands.Create(assetTicker, requestedPrice, requestedFundingRate), listOf(ourIdentity.owningKey, exchange.owningKey))
-                .addOutputState(output)
+                .addCommand(command)
+                .addInputState(perpFuturesStateRefToEnd)
 
             // Verify and sign it with our KeyPair.
             progressTracker.currentStep = VERIFYING_TRANSACTION
@@ -88,25 +83,23 @@ object CreatePositionFlow {
             //Generate filtered tx
             val ftx = ptx.buildFilteredTransaction(Predicate{
                 when (it){
-                    is Command<*> -> oracle.owningKey in it.signers && it.value is PerpFuturesContract.Commands.Create
+                    is Command<*> -> oracle.owningKey in it.signers && it.value is PerpFuturesContract.Commands.Close
                     else -> false
                 }
 
             })
+            //Get oracle to sign
+            val oracleSig = subFlow(SignPriceOracleFlow(oracle, ftx, instant))
+            val usAndOracleSigned = ptx.withAdditionalSignature(oracleSig)
 
-            //Get price/ funding rate oracle to sign
-            //Add sigs to tx
-            val priceOracleSig = subFlow(SignPriceOracleFlow(oracle, ftx, instant))
-            val fundingRateOracleSig = subFlow(SignFundingRateOracleFlow(oracle, ftx, instant))
-            val usAndOracleSigned = ptx.withAdditionalSignature(priceOracleSig).withAdditionalSignature(fundingRateOracleSig)
-
-            // Collect the exchanges signature
+            //Collect exchange's sig
             progressTracker.currentStep = GATHERING_SIGS
             val exchangePartySession = initiateFlow(exchange)
             val fullySignedTx =
                 subFlow(CollectSignaturesFlow(usAndOracleSigned, setOf(exchangePartySession),
                     GATHERING_SIGS.childProgressTracker()
                 ))
+
 
             // Finalise the tx
             progressTracker.currentStep = FINALISING_TRANSACTION
@@ -117,7 +110,7 @@ object CreatePositionFlow {
     }
 
     /** Exchange Response Logic */
-    @InitiatedBy(CreatePositionFlow.Initiator::class)
+    @InitiatedBy(LiquidatePositionFlow.Initiator::class)
     class Acceptor(val exchangePartySession: FlowSession) : FlowLogic<SignedTransaction>() {
 
         @Suspendable
@@ -125,17 +118,8 @@ object CreatePositionFlow {
             val signTransactionFlow = object : SignTransactionFlow(exchangePartySession) {
                 override fun checkTransaction(stx: SignedTransaction) = requireThat {
                     // Verify tx meets exchange constraints
-                    val output = stx.tx.outputsOfType<PerpFuturesState>().first()
-                    "Must be a PerpFuture State" using (output is PerpFuturesState)
 
-                    val totalValue = output.initialAssetPrice * output.positionSize
-                    "Total position size must be less than $1m" using (totalValue < 1000000)
-                    "Position size must be greater than 0" using (totalValue > 0)
-
-                    val leverage = (output.initialAssetPrice * output.positionSize) / output.collateralPosted
-                    "Leverage must be below 5x" using (leverage < 5)
-
-                    "Collateral must be greater than 0" using(output.collateralPosted > 0)
+                    //size is 0 + whatever...
                 }
             }
 
@@ -144,5 +128,4 @@ object CreatePositionFlow {
             return subFlow(ReceiveFinalityFlow(exchangePartySession, expectedTxId = txId))
         }
     }
-}
-
+}*/

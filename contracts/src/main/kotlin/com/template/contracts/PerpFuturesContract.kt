@@ -27,17 +27,15 @@ class PerpFuturesContract : Contract {
                 "No inputs should be consumed when issuing." using (tx.inputs.isEmpty())
                 "Only one output state should be created." using (tx.outputs.size == 1)
                 "Contract issuer must not also be contract taker" using (output.exchange != output.taker)
-               // "All participants must sign" using (command.signers.containsAll(output.participants.map {it.owningKey}))
+                "All participants must sign" using (command.signers.containsAll(output.participants.map {it.owningKey}))
                 "The output must be of type PerpFuturesState" using (output is PerpFuturesState)
 
                 //Perp contract specific constraints.
-                "Initial price must be greater than 0" using (output.initialAssetPrice > 0)
                 "Position size must be greater than 0" using (output.positionSize > 0)
                 "Collateral must be positive" using (output.collateralPosted > 0)
-                //get leverage
+
                 val leverage = (output.positionSize * output.initialAssetPrice) / output.collateralPosted
                 "Cannot use leverage greater than 5x" using (leverage < 5)
-                //Something here about asset ticker maybe use an enumerated type for asset ticker to force this
             }
 
             is Commands.Close -> requireThat{
@@ -52,14 +50,23 @@ class PerpFuturesContract : Contract {
                 val input = tx.inputsOfType<PerpFuturesState>().first()
                 val output = tx.outputsOfType<PerpFuturesState>().first()
 
+                //General
                 "There should be one input state." using (tx.inputs.size == 1)
                 "Only one output state should be created." using (tx.outputs.size == 1)
-                "Position size must decrease." using (input.positionSize > output.positionSize)
-
                 "The input must be of type PerpFuturesState" using (input is PerpFuturesState)
                 "The output must be of type PerpFuturesState" using (output is PerpFuturesState)
-
                 "All participants must sign" using (command.signers.containsAll(output.participants.map {it.owningKey}))
+
+                //Specific
+                "Position size must decrease." using (input.positionSize > output.positionSize)
+                "Position size must be greater than 0, if closing the contract please use the close flow" using (output.positionSize > 0)
+                "Collateral must be greater than 0, if closing the contract please use the close flow" using (output.collateralPosted > 0)
+
+                //Make sure follows from input
+                "Ticker must stay the same" using (input.assetTicker == output.assetTicker)
+                "Taker must stay the same" using (input.taker == output.taker)
+                "Exchange must stay the same" using (input.exchange == output.exchange)
+                "Initial asset price must stay the same" using (input.initialAssetPrice == output.initialAssetPrice)
             }
 
         }
