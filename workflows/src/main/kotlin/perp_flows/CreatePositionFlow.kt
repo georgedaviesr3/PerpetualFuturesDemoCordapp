@@ -14,6 +14,8 @@ import net.corda.core.flows.FinalityFlow
 import net.corda.core.flows.CollectSignaturesFlow
 import net.corda.core.identity.CordaX500Name
 import java.util.function.Predicate
+import java.time.Instant
+import java.time.Instant.now
 
 object CreatePositionFlow {
     @InitiatingFlow
@@ -55,6 +57,9 @@ object CreatePositionFlow {
         override fun call(): SignedTransaction {
             val notary = serviceHub.networkMapCache.notaryIdentities[0]
 
+            //Get current time for oracle queries
+            val instant: Instant = now()
+
            //Oracle is passed as a param for testing
            /* val oracleName = CordaX500Name("Price Oracle", "London", "GB")
            val oracle = serviceHub.networkMapCache.getNodeByLegalName(oracleName)?.legalIdentities?.first()
@@ -62,16 +67,16 @@ object CreatePositionFlow {
 
             // Get current price from oracle
             progressTracker.currentStep = GETTING_ORACLE_PRICE
-            val requestedPrice = subFlow(QueryPriceOracleFlow(oracle, assetTicker))
+            val requestedPrice = subFlow(QueryPriceOracleFlow(oracle, assetTicker, instant))
 
             //Get current funding rate from funding rate oracle
-            val requestedFundingRate = subFlow(QueryFundingRateOracleFlow(oracle, assetTicker))
+            val requestedFundingRate = subFlow(QueryFundingRateOracleFlow(oracle, assetTicker, instant))
 
             // Compose the futures contract state and new transaction builder object
             progressTracker.currentStep = GENERATING_TRANSACTION
-            val output = PerpFuturesState(assetTicker, requestedFundingRate, positionSize, collateralPosted, ourIdentity, exchange)
+            val output = PerpFuturesState(assetTicker, requestedPrice, positionSize, collateralPosted, ourIdentity, exchange)
             val builder = TransactionBuilder(notary)
-                .addCommand(PerpFuturesContract.Commands.Create(assetTicker,requestedPrice, requestedFundingRate), listOf(ourIdentity.owningKey, exchange.owningKey))
+                .addCommand(PerpFuturesContract.Commands.Create(assetTicker, requestedPrice, requestedFundingRate), listOf(ourIdentity.owningKey, exchange.owningKey))
                 .addOutputState(output)
 
             // Verify and sign it with our KeyPair.
@@ -91,8 +96,8 @@ object CreatePositionFlow {
 
             //Get price/ funding rate oracle to sign
             //Add sigs to tx
-            val priceOracleSig = subFlow(SignPriceOracleFlow(oracle, ftx))
-            val fundingRateOracleSig = subFlow(SignFundingRateOracleFlow(oracle, ftx))
+            val priceOracleSig = subFlow(SignPriceOracleFlow(oracle, ftx, instant))
+            val fundingRateOracleSig = subFlow(SignFundingRateOracleFlow(oracle, ftx, instant))
             val usAndOracleSigned = ptx.withAdditionalSignature(priceOracleSig).withAdditionalSignature(fundingRateOracleSig)
 
             // Collect the exchanges signature
@@ -121,9 +126,7 @@ object CreatePositionFlow {
                 override fun checkTransaction(stx: SignedTransaction) = requireThat {
                     // Verify tx meets exchange constraints
                     val output = stx.tx.outputsOfType<PerpFuturesState>().first()
-
                     "Must be a PerpFuture State" using (output is PerpFuturesState)
-                    "Only BTC futures are accepted" using(output.assetTicker == "BTC")
 
                     val totalValue = output.initialAssetPrice * output.positionSize
                     "Total position size must be less than $1m" using (totalValue < 1000000)

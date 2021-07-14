@@ -12,15 +12,17 @@ import net.corda.core.utilities.ProgressTracker
 import net.corda.core.utilities.unwrap
 import services.FundingRateOracle
 import services.PriceOracle
+import java.time.Instant
 
 /**
  * Initiating flow to query the funding rate of an asset
  * @param oracle asset funding rate provider
  * @param ftx filtered tx exposing only command containing the asset ticker data - returns a digital sig over tx merkle tree
+ * @param instant the moment in time the funding rate was calculated at
  */
 
 @InitiatingFlow
-class SignFundingRateOracleFlow(private val oracle: Party, private val ftx: FilteredTransaction): FlowLogic<TransactionSignature>() {
+class SignFundingRateOracleFlow(private val oracle: Party, private val ftx: FilteredTransaction, private val instant: Instant): FlowLogic<TransactionSignature>() {
     companion object {
         object SIGNING : ProgressTracker.Step("Signing filtered transaction.")
         object SENDING : ProgressTracker.Step("Sending sign response.")
@@ -33,7 +35,7 @@ class SignFundingRateOracleFlow(private val oracle: Party, private val ftx: Filt
 
         progressTracker.currentStep = SIGNING
         val signedTx = try{
-            serviceHub.cordaService(FundingRateOracle::class.java).sign(ftx)
+            serviceHub.cordaService(FundingRateOracle::class.java).sign(ftx, instant)
         } catch (e: Exception){
             throw FlowException(e)
         }

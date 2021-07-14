@@ -50,7 +50,7 @@ class CreatePositionFlowTests {
     @Test
     fun createPositionTest() {
         //Create State
-        val createPositionFlow = CreatePositionFlow.Initiator("BTC", 1000.0, 0.01, exchange.info.legalIdentities[0], oracle.info.legalIdentities[0])
+        val createPositionFlow = CreatePositionFlow.Initiator("ETH", 1000.0, 0.01, exchange.info.legalIdentities[0], oracle.info.legalIdentities[0])
         val future1 = trader1.startFlow(createPositionFlow)
 
         //Run network
@@ -58,7 +58,7 @@ class CreatePositionFlowTests {
         future1.getOrThrow()
 
         //Retrieve new state from vault
-        val tickerQuery = PerpFuturesSchemaV1.PerpSchema::assetTicker.equal("BTC")
+        val tickerQuery = PerpFuturesSchemaV1.PerpSchema::assetTicker.equal("ETH")
         val takerQuery = PerpFuturesSchemaV1.PerpSchema::taker.equal(trader1.info.legalIdentities[0])
 
         val queryCriteria = QueryCriteria.VaultCustomQueryCriteria(tickerQuery).and(QueryCriteria.VaultCustomQueryCriteria(takerQuery))
@@ -67,7 +67,7 @@ class CreatePositionFlowTests {
         val stateData = state.state.data
 
         //Ensure values are stored in the correct variables and oracle price is correct
-        assertEquals(0.8, stateData.initialAssetPrice, "Wrong oracle price")
+        assertEquals(2200.5, stateData.initialAssetPrice, "Wrong oracle price")
         //assertEquals("BTC", stateData.assetTicker, "Wrong asset ticker")
         assertEquals(0.01, stateData.positionSize, "Wrong position size")
         assertEquals(1000.0,stateData.collateralPosted, "Wrong collateral")

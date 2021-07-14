@@ -11,15 +11,17 @@ import net.corda.core.transactions.SignedTransaction
 import net.corda.core.utilities.ProgressTracker
 import net.corda.core.utilities.unwrap
 import services.PriceOracle
+import java.time.Instant
 
 /**
  * Initiating flow to query the price of an asset
  * @param oracle asset price provider
  * @param ftx filtered tx exposing only command containing the asset ticker data - returns a digital sig over tx merkle tree
+ * @param instant the instant at which the asset price was retrieved
  */
 
 @InitiatingFlow
-class SignPriceOracleFlow(private val oracle: Party, private val ftx: FilteredTransaction): FlowLogic<TransactionSignature>() {
+class SignPriceOracleFlow(private val oracle: Party, private val ftx: FilteredTransaction, private val instant: Instant): FlowLogic<TransactionSignature>() {
     companion object {
         object SIGNING : ProgressTracker.Step("Signing filtered transaction.")
         object SENDING : ProgressTracker.Step("Sending sign response.")
@@ -32,14 +34,13 @@ class SignPriceOracleFlow(private val oracle: Party, private val ftx: FilteredTr
 
         progressTracker.currentStep = SIGNING
         val signedTx = try{
-            serviceHub.cordaService(PriceOracle::class.java).sign(ftx)
+            serviceHub.cordaService(PriceOracle::class.java).sign(ftx, instant)
         } catch (e: Exception){
             throw FlowException(e)
         }
 
         progressTracker.currentStep = SENDING
         return signedTx
-        //return session.sendAndRecieve<TransactionSignature>(ftx).unwrap { it }
     }
 
 }

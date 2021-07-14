@@ -15,6 +15,7 @@ import net.corda.core.flows.FinalityFlow
 import net.corda.core.flows.CollectSignaturesFlow
 import net.corda.core.flows.FlowSession
 import net.corda.core.identity.CordaX500Name
+import java.time.Instant
 import java.util.function.Predicate
 
 
@@ -59,6 +60,9 @@ object PartialClosePositionFlow {
         override fun call(): SignedTransaction {
             val notary = serviceHub.networkMapCache.notaryIdentities[0]
 
+            //Get current time for oracle queries
+            val instant: Instant = Instant.now()
+
             // Get current Futures State with vals for this asset ticker and taker(ourIdentity)
             progressTracker.currentStep = GETTING_STATE
             val perpFuturesStateRefToEnd = getPerpFuturesStateByIDAndTicker(serviceHub,ourIdentity, assetTicker)
@@ -72,7 +76,7 @@ object PartialClosePositionFlow {
 
             // Get current price from oracle
             progressTracker.currentStep = GETTING_ORACLE_PRICE
-            val requestedPrice = subFlow(QueryPriceOracleFlow(oracle, assetTicker))
+            val requestedPrice = subFlow(QueryPriceOracleFlow(oracle, assetTicker, instant))
 
             // Compose the futures contract state.
             progressTracker.currentStep = GENERATING_TRANSACTION
@@ -100,7 +104,7 @@ object PartialClosePositionFlow {
 
             })
             //Get oracle to sign
-            val oracleSig = subFlow(SignPriceOracleFlow(oracle, ftx))
+            val oracleSig = subFlow(SignPriceOracleFlow(oracle, ftx, instant))
             val usAndOracleSigned = ptx.withAdditionalSignature(oracleSig)
 
             // Collect exchanges sig
